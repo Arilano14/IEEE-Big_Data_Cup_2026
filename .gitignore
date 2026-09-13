@@ -1,0 +1,37 @@
+# Python virtual environment & cache
+.venv/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Testing & Linting
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Large Datasets & Storage (Raw / Intermediate / Warehouses)
+data/bronze/
+data/silver/
+data/gold/
+*.duckdb
+*.duckdb.wal
+*.parquet
+*.csv.gz
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
