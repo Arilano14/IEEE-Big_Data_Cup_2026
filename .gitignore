@@ -16,13 +16,12 @@ htmlcov/
 .ruff_cache/
 
 # Large Datasets & Storage (Raw / Intermediate / Warehouses)
-data/bronze/
-data/silver/
-data/gold/
+data/
 *.duckdb
 *.duckdb.wal
 *.parquet
 *.csv.gz
+*.jsonl
 
 # Environment variables & secrets
 .env
