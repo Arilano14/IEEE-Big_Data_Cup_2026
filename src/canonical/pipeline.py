@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
+import uuid
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -28,6 +29,7 @@ from src.canonical.schemas import (
     XbrlUnit,
 )
 from src.canonical.xbrl import (
+    UUID_NAMESPACE,
     parse_calculation_linkbase,
     parse_instance_document,
     parse_label_linkbase,
@@ -226,6 +228,27 @@ def run_canonical_pipeline(
             for l_rel in res["label_rels"]:
                 all_label_rels.append(l_rel.to_dict())
 
+    # Ensure concept catalog includes any concept referenced in facts or relationships
+    for f in all_facts:
+        q = f["concept_qname"]
+        if q and q not in concept_map:
+            pfx = q.split(":")[0] if ":" in q else "us-gaap"
+            loc = q.split(":")[1] if ":" in q else q
+            cid = str(uuid.uuid5(UUID_NAMESPACE, f"global:concept:{q}"))
+            concept_map[q] = {
+                "concept_id": cid,
+                "qname": q,
+                "prefix": pfx,
+                "local_name": loc,
+                "namespace_uri": None,
+                "data_type": None,
+                "period_type": None,
+                "balance_type": None,
+                "substitution_group": "xbrli:item",
+                "is_abstract": False,
+                "is_nillable": True,
+            }
+
     all_entities = [{"cik": cik, "entity_scheme": "http://www.sec.gov/CIK"} for cik in sorted(entity_ciks)]
     all_concepts = list(concept_map.values())
 
@@ -252,7 +275,6 @@ def run_canonical_pipeline(
             tbl = pa.Table.from_pylist(data)
             pq.write_table(tbl, str(pq_path))
         else:
-            # Write empty table with schema if empty
             tbl = pa.Table.from_pylist([{}])
             pq.write_table(tbl, str(pq_path))
         record_counts[name] = len(data)

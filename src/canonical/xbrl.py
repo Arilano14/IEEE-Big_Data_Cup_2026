@@ -94,9 +94,7 @@ def parse_instance_document(
     facts: List[FinancialFact] = []
     entity_cik: Optional[str] = None
 
-    # Track context and unit objects by ID
     context_map: Dict[str, XbrlContext] = {}
-
     fact_locator = 0
 
     for elem in list(root):
@@ -110,7 +108,6 @@ def parse_instance_document(
                 continue
 
             cik = ""
-            # Extract identifier
             for id_elem in elem.iter():
                 if id_elem.tag.endswith("identifier"):
                     cik = (id_elem.text or "").strip()
@@ -239,11 +236,9 @@ def parse_instance_document(
                     numeric_val = None
                     sign = "N/A"
 
-            # Optional byte/character offset computation for supplemental evidence
             char_start = None
             char_end = None
             if full_query and raw_value:
-                # Find substring within instance section
                 pos = full_query.find(f">{raw_value}<")
                 if pos != -1:
                     char_start = pos + 1
@@ -288,11 +283,7 @@ def parse_schema_document(
     schema_xml: str,
     case_id: str,
 ) -> Tuple[List[XbrlConcept], Optional[str], Optional[str]]:
-    """Extracts custom element definitions and target namespace from Schema XML.
-    
-    Returns:
-        Tuple of (concepts_list, target_namespace, custom_prefix).
-    """
+    """Extracts custom element definitions and target namespace from Schema XML."""
     if not schema_xml.strip():
         return [], None, None
 
@@ -307,13 +298,11 @@ def parse_schema_document(
     target_ns = root.attrib.get("targetNamespace")
     custom_prefix = None
     if target_ns:
-        # Extract prefix if defined in schema xmlns
         for k, v in root.attrib.items():
             if k.startswith("xmlns:") and v == target_ns:
                 custom_prefix = k.split(":")[1]
                 break
         if not custom_prefix:
-            # Fallback to URI domain fragment (e.g. http://plasma/20211130 -> plasma)
             parts = target_ns.replace("http://", "").replace("https://", "").split("/")
             custom_prefix = parts[0] if parts else "custom"
 
@@ -376,7 +365,6 @@ def parse_calculation_linkbase(
         except Exception:
             return []
 
-    # 1. Map locators (xlink:label -> concept QName)
     locators: Dict[str, str] = {}
     for elem in root.iter():
         if elem.tag.endswith("loc"):
@@ -387,7 +375,6 @@ def parse_calculation_linkbase(
                 concept_qname = _normalize_concept_qname(raw_concept, {}, default_prefix=custom_prefix)
                 locators[label] = concept_qname
 
-    # 2. Extract calculation arcs
     relationships: List[CalculationRelationship] = []
     for link in root.iter():
         if link.tag.endswith("calculationLink"):
@@ -449,9 +436,8 @@ def parse_label_linkbase(
         except Exception:
             return []
 
-    # Map locators (xlink:label -> concept QName)
     locators: Dict[str, str] = {}
-    labels_by_lbl: Dict[str, Tuple[str, str, str]] = {}  # label_id -> (text, role, lang)
+    labels_by_lbl: Dict[str, Tuple[str, str, str]] = {}
 
     for elem in root.iter():
         if elem.tag.endswith("loc"):
@@ -468,7 +454,6 @@ def parse_label_linkbase(
             if lbl and text:
                 labels_by_lbl[lbl] = (text, role, lang)
 
-    # Connect locators and labels via labelArc
     label_relationships: List[LabelRelationship] = []
     for arc in root.iter():
         if arc.tag.endswith("labelArc"):
@@ -495,22 +480,60 @@ def parse_label_linkbase(
 
 
 def parse_taxonomy_document(
-    tax_xml: str,
+    tax_content: str,
     case_id: str,
 ) -> List[XbrlConcept]:
-    """Extracts supplementary US GAAP taxonomy element declarations."""
-    if not tax_xml.strip():
+    """Extracts supplementary US GAAP taxonomy element declarations from structured text blocks or XML."""
+    if not tax_content.strip():
         return []
 
+    concepts: List[XbrlConcept] = []
+
+    # 1. Check for structured text block format [Concept Core]
+    if "[Concept Core]" in tax_content:
+        blocks = re.split(r"\[Concept Core\]", tax_content)
+        for b in blocks[1:]:
+            id_m = re.search(r"ID:\s*([\w\-:]+)", b)
+            type_m = re.search(r"Type:\s*([\w\-:]+)", b)
+            bal_m = re.search(r"Balance:\s*([\w\-:]+)", b)
+            per_m = re.search(r"PeriodType:\s*([\w\-:]+)", b)
+            abs_m = re.search(r"Abstract:\s*([\w\-:]+)", b)
+
+            if id_m:
+                qname = id_m.group(1).strip()
+                pfx = qname.split(":")[0] if ":" in qname else "us-gaap"
+                loc = qname.split(":")[1] if ":" in qname else qname
+                data_type = type_m.group(1).strip() if type_m else None
+                bal = bal_m.group(1).strip() if bal_m and bal_m.group(1) != "None" else None
+                ptype = per_m.group(1).strip() if per_m and per_m.group(1) != "None" else None
+                is_abs = abs_m.group(1).lower() == "true" if abs_m else False
+
+                cid = str(uuid.uuid5(UUID_NAMESPACE, f"{case_id}:concept:{qname}"))
+                c = XbrlConcept(
+                    concept_id=cid,
+                    qname=qname,
+                    prefix=pfx,
+                    local_name=loc,
+                    namespace_uri="http://fasb.org/us-gaap/2021-01-31",
+                    data_type=data_type,
+                    period_type=ptype,
+                    balance_type=bal,
+                    substitution_group="xbrli:item",
+                    is_abstract=is_abs,
+                    is_nillable=True,
+                )
+                concepts.append(c)
+        return concepts
+
+    # 2. XML fallback if taxonomy is XML element declarations
     try:
-        root = ET.fromstring(tax_xml)
+        root = ET.fromstring(tax_content)
     except Exception:
         try:
-            root = ET.fromstring(f"<root>{tax_xml}</root>")
+            root = ET.fromstring(f"<root>{tax_content}</root>")
         except Exception:
             return []
 
-    concepts: List[XbrlConcept] = []
     for elem in root.iter():
         if elem.tag.endswith("element"):
             name = elem.attrib.get("name")
