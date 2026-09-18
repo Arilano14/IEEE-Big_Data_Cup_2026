@@ -1,0 +1,8 @@
+# AuditAI BI — Explainable Financial Audit & Exception Intelligence Platform
+# IEEE Big Data Cup 2026 — FinReason Cup — Task 3
+
+# Runtime Dependencies
+pyarrow>=25.0.0
+
+# Development and Testing Dependencies
+pytest>=9.0.0
